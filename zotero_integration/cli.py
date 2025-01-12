@@ -1,6 +1,7 @@
 import click
 import re
 from pathlib import Path
+from pyfzf import FzfPrompt
 from pyzotero import zotero
 from datetime import datetime, timezone
 
@@ -110,7 +111,25 @@ def is_added_today(date_str):
     )
 
 
-@click.group(invoke_without_command=True)
+class AliasedGroup(click.Group):
+    def get_command(self, ctx, cmd_name):
+        rv = click.Group.get_command(self, ctx, cmd_name)
+        if rv is not None:
+            return rv
+        matches = [x for x in self.list_commands(ctx) if x.startswith(cmd_name)]
+        if not matches:
+            return None
+        elif len(matches) == 1:
+            return click.Group.get_command(self, ctx, matches[0])
+        ctx.fail(f"Too many matches: {', '.join(sorted(matches))}")
+
+    def resolve_command(self, ctx, args):
+        # always return the full command name
+        _, cmd, args = super().resolve_command(ctx, args)
+        return cmd.name, cmd, args
+
+
+@click.group(invoke_without_command=True, cls=AliasedGroup)
 @click.pass_context
 def cli(ctx):
     """Synchronize Zotero literature with your knowledge vault"""
@@ -154,6 +173,47 @@ def today():
             # Write to file
             filepath.write_text(content)
             print(f"Created: {filepath}")
+
+
+@cli.command(name="search")
+def search():
+    """Search through Zotero items using fzf"""
+    zot = zotero.Zotero(library_id=0, library_type="user", api_key="", local=True)
+    zot.add_parameters(limit=0, sort="dateAdded", direction="desc")
+    items = zot.items()
+
+    # Filter out attachments and prepare titles for fzf
+    titles = []
+    title_to_item = {}
+    for item in items:
+        if item["data"]["itemType"] == "attachment":
+            continue
+        title = item["data"].get("title", "Untitled")
+        titles.append(title)
+        title_to_item[title] = item
+
+    # Use fzf to select a title
+    fzf = FzfPrompt()
+    try:
+        selected = fzf.prompt(titles)[0]
+
+        # Get the selected item and create markdown
+        item = title_to_item[selected]
+        extra_field = item["data"].get("extra", "")
+        metadata = parse_extra(extra_field)
+
+        # Create filename and path
+        filename = sanitize_filename(selected)
+        notes_dir = Path.home() / "Documents" / "Silverbullet" / "Literature_Note"
+        filepath = notes_dir / filename
+
+        # Create markdown content and write to file
+        content = create_markdown_content(item, metadata)
+        filepath.write_text(content)
+        print(f"Created: {filepath}")
+
+    except (IndexError, KeyError):
+        print("No selection made")
 
 
 if __name__ == "__main__":
