@@ -73,10 +73,10 @@ def create_markdown_content(item, metadata):
                 if authors:
                     frontmatter.append(f"authors: {authors}")
             elif target_key == "tags":
-                # Extract tag names and create a list
+                # Extract tag names and create a list, always include 'literature'
                 tags = [t["tag"] for t in value]
-                if tags:
-                    frontmatter.append(f"tags: {tags}")
+                tags.append("literature")
+                frontmatter.append(f"tags: {tags}")
             else:
                 # Handle other fields as before
                 frontmatter.append(f'{target_key}: "{value}"')
