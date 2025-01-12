@@ -1,9 +1,14 @@
 import click
 import re
+import os
 from pathlib import Path
 from pyfzf import FzfPrompt
 from pyzotero import zotero
 from datetime import datetime, timezone
+
+# Unset HTTP proxies
+os.environ.pop("http_proxy", None)
+os.environ.pop("https_proxy", None)
 
 
 def sanitize_filename(title):
