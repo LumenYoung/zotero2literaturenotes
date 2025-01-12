@@ -6,8 +6,11 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "click>=8.1.8",
-    "pyzotero>=1.6.4",
+    "pyzotero",
 ]
 
 [project.scripts]
 litsync = "zotero_integration.cli:cli"
+
+[tool.uv.sources]
+pyzotero = { git = "https://github.com/urschrei/pyzotero" }
