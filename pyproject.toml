@@ -5,5 +5,9 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    "click>=8.1.8",
     "pyzotero>=1.6.4",
 ]
+
+[project.scripts]
+litsync = "zotero_integration.cli:cli"
