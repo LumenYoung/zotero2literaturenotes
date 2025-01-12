@@ -1,7 +1,83 @@
 import click
+import re
+from pathlib import Path
 from pyzotero import zotero
 from datetime import datetime, timezone
-import re
+
+
+def sanitize_filename(title):
+    """Convert title to valid filename"""
+    # Replace colons with space-dash
+    filename = title.replace(":", " -")
+    # Remove other problematic characters
+    filename = re.sub(r'[<>"/\\|?*]', "", filename)
+    # Remove multiple dashes
+    filename = re.sub(r"-+", "-", filename)
+    # Remove leading/trailing dashes and spaces
+    filename = filename.strip("- ")
+    return f"{filename}.md"
+
+
+# Mapping from Zotero fields to frontmatter keys
+FRONTMATTER_MAPPING = {
+    "key": "zotero_key",
+    "data.itemType": "item_type",
+    "data.title": "title",
+    "data.abstractNote": "abstract",
+    "data.url": "url",
+    "data.DOI": "doi",
+    "data.publicationTitle": "publication",
+    "data.dateAdded": "add_date",
+    "data.creators": "authors",
+    "data.tags": "tags",
+}
+
+
+def get_nested_value(item, path):
+    """Get value from nested dictionary using dot notation path"""
+    current = item
+    for part in path.split("."):
+        if isinstance(current, dict) and part in current:
+            current = current[part]
+        else:
+            return None
+    return current
+
+
+def create_markdown_content(item, metadata):
+    """Create markdown content with frontmatter"""
+    frontmatter = ["---"]
+
+    # Add citation key from metadata if it exists
+    citation_key = metadata.get("Citation Key", "")
+    if citation_key:
+        frontmatter.append(f'citation_key: "{citation_key}"')
+
+    # Add mapped fields from item
+    for source_path, target_key in FRONTMATTER_MAPPING.items():
+        value = get_nested_value(item, source_path)
+        if value:  # Only add if value exists and is not empty
+            if target_key == "authors":
+                # Extract author names and create a list
+                authors = [
+                    f"{creator['firstName']} {creator['lastName']}"
+                    for creator in value
+                    if creator["creatorType"] == "author"
+                ]
+                if authors:
+                    frontmatter.append(f"authors: {authors}")
+            elif target_key == "tags":
+                # Extract tag names and create a list
+                tags = [t["tag"] for t in value]
+                if tags:
+                    frontmatter.append(f"tags: {tags}")
+            else:
+                # Handle other fields as before
+                frontmatter.append(f'{target_key}: "{value}"')
+
+    frontmatter.extend(["---", "", f'# {item["data"]["title"]}', ""])
+
+    return "\n".join(frontmatter)
 
 
 def parse_extra(extra_text):
@@ -44,24 +120,40 @@ def cli(ctx):
 
 @cli.command()
 def today():
-    """Show items added today"""
+    """Create markdown files for items added today"""
     zot = zotero.Zotero(library_id=0, library_type="user", api_key="", local=True)
+    zot.add_parameters(limit=50, sort="dateAdded", direction="desc")
     items = zot.items()
 
+    # Ensure the Literature_Notes directory exists
+    notes_dir = Path.home() / "Documents" / "Silverbullet" / "Literature_Note"
+    notes_dir.mkdir(parents=True, exist_ok=True)
+
     for item in items:
-        date_added = item["data"].get("dateAdded")
+        # Skip attachments
+        if item["data"]["itemType"] == "attachment":
+            continue
+
+        date_added = item["data"]["dateAdded"]
         if is_added_today(date_added):
             extra_field = item["data"].get("extra", "")
             metadata = parse_extra(extra_field)
 
-            # Print the item key and citation key if available
-            citation_key = metadata.get("Citation Key", "No citation key")
-            print(f"{item['key']}: {citation_key}")
-            # Print other metadata if present
-            for key, value in metadata.items():
-                if key != "Citation Key":
-                    print(f"  {key}: {value}")
-            print()
+            # Create filename from title
+            title = item["data"].get("title", "Untitled")
+            filename = sanitize_filename(title)
+            filepath = notes_dir / filename
+
+            # Only create file if it doesn't exist
+            if filepath.exists():
+                continue
+
+            # Create markdown content
+            content = create_markdown_content(item, metadata)
+
+            # Write to file
+            filepath.write_text(content)
+            print(f"Created: {filepath}")
 
 
 if __name__ == "__main__":
