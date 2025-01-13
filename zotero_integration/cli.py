@@ -11,6 +11,75 @@ os.environ.pop("http_proxy", None)
 os.environ.pop("https_proxy", None)
 
 
+class ZoteroItem:
+    def __init__(self, raw_item):
+        self.raw_item = raw_item
+        self.data = raw_item["data"]
+        self.metadata = self._parse_extra(self.data.get("extra", ""))
+
+    def _parse_extra(self, extra_text):
+        """Parse the extra field into a dictionary of metadata"""
+        if not extra_text:
+            return {}
+        return dict(
+            tuple(line.split(":", 1)) for line in extra_text.split("\n") if ":" in line
+        )
+
+    def get_authors(self):
+        creators = self.data.get("creators", [])
+        authors = []
+        for creator in creators:
+            if creator["creatorType"] == "author":
+                if "firstName" in creator and "lastName" in creator:
+                    authors.append(f"{creator['firstName']} {creator['lastName']}")
+                elif "name" in creator:
+                    authors.append(creator["name"])
+        return authors
+
+    def get_tags(self):
+        tags = [t["tag"] for t in self.data.get("tags", [])]
+        tags.append("literature")
+        return tags
+
+    def get_short_title(self):
+        """Create a short version of the title using first five words"""
+        words = self.data["title"].split()[:5]
+        return " ".join(words)
+
+    def get_frontmatter(self):
+        frontmatter = {}
+
+        # Add citation key if exists
+        if citation_key := self.metadata.get("Citation Key"):
+            frontmatter["citation_key"] = citation_key
+            frontmatter["aliases"] = [citation_key]
+        else:
+            # Use short title as alias if no citation key exists
+            frontmatter["aliases"] = [self.get_short_title()]
+
+        # Add mapped fields
+        for source_path, target_key in FRONTMATTER_MAPPING.items():
+            if value := get_nested_value(self.raw_item, source_path):
+                if target_key == "authors":
+                    frontmatter["authors"] = self.get_authors()
+                elif target_key == "tags":
+                    frontmatter["tags"] = self.get_tags()
+                else:
+                    frontmatter[target_key] = value
+
+        return frontmatter
+
+    def create_markdown(self):
+        frontmatter = ["---"]
+        for key, value in self.get_frontmatter().items():
+            if isinstance(value, (list, tuple)):
+                frontmatter.append(f"{key}: {value}")
+            else:
+                frontmatter.append(f'{key}: "{value}"')
+        frontmatter.extend(["---", "", f'# {self.data["title"]}', ""])
+        return "\n".join(frontmatter)
+
+
 def sanitize_filename(title):
     """Convert title to valid filename"""
     # Replace colons with space-dash
@@ -48,55 +117,6 @@ def get_nested_value(item, path):
         else:
             return None
     return current
-
-
-def create_markdown_content(item, metadata):
-    """Create markdown content with frontmatter"""
-    frontmatter = ["---"]
-
-    # Add citation key from metadata if it exists
-    citation_key = metadata.get("Citation Key", "")
-    if citation_key:
-        frontmatter.append(f'citation_key: "{citation_key}"')
-
-    # Add mapped fields from item
-    for source_path, target_key in FRONTMATTER_MAPPING.items():
-        value = get_nested_value(item, source_path)
-        if value:  # Only add if value exists and is not empty
-            if target_key == "authors":
-                # Extract author names and create a list
-                authors = [
-                    f"{creator['firstName']} {creator['lastName']}"
-                    for creator in value
-                    if creator["creatorType"] == "author"
-                ]
-                if authors:
-                    frontmatter.append(f"authors: {authors}")
-            elif target_key == "tags":
-                # Extract tag names and create a list, always include 'literature'
-                tags = [t["tag"] for t in value]
-                tags.append("literature")
-                frontmatter.append(f"tags: {tags}")
-            else:
-                # Handle other fields as before
-                frontmatter.append(f'{target_key}: "{value}"')
-
-    frontmatter.extend(["---", "", f'# {item["data"]["title"]}', ""])
-
-    return "\n".join(frontmatter)
-
-
-def parse_extra(extra_text):
-    """Parse the extra field into a dictionary of metadata"""
-    if not extra_text:
-        return {}
-
-    metadata = {}
-    for line in extra_text.split("\n"):
-        if ":" in line:
-            key, value = line.split(":", 1)
-            metadata[key.strip()] = value.strip()
-    return metadata
 
 
 def is_added_today(date_str):
@@ -153,18 +173,15 @@ def today():
     notes_dir = Path.home() / "Documents" / "Silverbullet" / "Literature_Note"
     notes_dir.mkdir(parents=True, exist_ok=True)
 
-    for item in items:
+    for raw_item in items:
         # Skip attachments
-        if item["data"]["itemType"] == "attachment":
+        if raw_item["data"]["itemType"] == "attachment":
             continue
 
-        date_added = item["data"]["dateAdded"]
-        if is_added_today(date_added):
-            extra_field = item["data"].get("extra", "")
-            metadata = parse_extra(extra_field)
-
+        item = ZoteroItem(raw_item)
+        if is_added_today(item.data["dateAdded"]):
             # Create filename from title
-            title = item["data"].get("title", "Untitled")
+            title = item.data.get("title", "Untitled")
             filename = sanitize_filename(title)
             filepath = notes_dir / filename
 
@@ -172,11 +189,8 @@ def today():
             if filepath.exists():
                 continue
 
-            # Create markdown content
-            content = create_markdown_content(item, metadata)
-
             # Write to file
-            filepath.write_text(content)
+            filepath.write_text(item.create_markdown())
             print(f"Created: {filepath}")
 
 
@@ -190,10 +204,11 @@ def search():
     # Filter out attachments and prepare titles for fzf
     titles = []
     title_to_item = {}
-    for item in items:
-        if item["data"]["itemType"] == "attachment":
+    for raw_item in items:
+        if raw_item["data"]["itemType"] == "attachment":
             continue
-        title = item["data"].get("title", "Untitled")
+        item = ZoteroItem(raw_item)
+        title = item.data.get("title", "Untitled")
         titles.append(title)
         title_to_item[title] = item
 
@@ -202,19 +217,16 @@ def search():
     try:
         selected = fzf.prompt(titles)[0]
 
-        # Get the selected item and create markdown
+        # Get the selected item
         item = title_to_item[selected]
-        extra_field = item["data"].get("extra", "")
-        metadata = parse_extra(extra_field)
 
         # Create filename and path
         filename = sanitize_filename(selected)
         notes_dir = Path.home() / "Documents" / "Silverbullet" / "Literature_Note"
         filepath = notes_dir / filename
 
-        # Create markdown content and write to file
-        content = create_markdown_content(item, metadata)
-        filepath.write_text(content)
+        # Write to file
+        filepath.write_text(item.create_markdown())
         print(f"Created: {filepath}")
 
     except (IndexError, KeyError):
