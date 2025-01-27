@@ -69,13 +69,24 @@ class ZoteroItem:
 
         return frontmatter
 
+    def _sanitize_frontmatter_value(self, value):
+        """Sanitize string values for frontmatter by handling quotes properly"""
+        if isinstance(value, str):
+            if '"' in value:
+                # If value contains double quotes, use single quotes
+                return f"'{value}'"
+            # Default to double quotes
+            return f'"{value}"'
+        return value
+
     def create_markdown(self):
         frontmatter = ["---"]
         for key, value in self.get_frontmatter().items():
             if isinstance(value, (list, tuple)):
                 frontmatter.append(f"{key}: {value}")
             else:
-                frontmatter.append(f'{key}: "{value}"')
+                sanitized_value = self._sanitize_frontmatter_value(value)
+                frontmatter.append(f"{key}: {sanitized_value}")
         frontmatter.extend(["---", "", f'# {self.data["title"]}', ""])
         return "\n".join(frontmatter)
 
