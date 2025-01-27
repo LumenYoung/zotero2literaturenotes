@@ -43,7 +43,8 @@ class ZoteroItem:
 
     def get_short_title(self):
         """Create a short version of the title using first five words"""
-        words = self.data["title"].split()[:5]
+        title = self.data.get("title", "Untitled")  # Use "Untitled" as fallback
+        words = title.split()[:5]
         return " ".join(words)
 
     def get_frontmatter(self):
@@ -87,7 +88,8 @@ class ZoteroItem:
             else:
                 sanitized_value = self._sanitize_frontmatter_value(value)
                 frontmatter.append(f"{key}: {sanitized_value}")
-        frontmatter.extend(["---", "", f'# {self.data["title"]}', ""])
+        title = self.data.get("title", "Untitled")  # Use "Untitled" as fallback
+        frontmatter.extend(["---", "", f"# {title}", ""])
         return "\n".join(frontmatter)
 
 
@@ -190,10 +192,13 @@ def today():
             continue
 
         item = ZoteroItem(raw_item)
+        # Skip items without titles
+        if not item.data.get("title"):
+            continue
+
         if is_added_today(item.data["dateAdded"]):
             # Create filename from title
-            title = item.data.get("title", "Untitled")
-            filename = sanitize_filename(title)
+            filename = sanitize_filename(item.data["title"])
             filepath = notes_dir / filename
 
             # Only create file if it doesn't exist
@@ -219,9 +224,10 @@ def search():
         if raw_item["data"]["itemType"] == "attachment":
             continue
         item = ZoteroItem(raw_item)
-        title = item.data.get("title", "Untitled")
-        titles.append(title)
-        title_to_item[title] = item
+        if not item.data.get("title"):
+            continue
+        titles.append(item.data["title"])
+        title_to_item[item.data["title"]] = item
 
     # Use fzf to select a title
     fzf = FzfPrompt()
