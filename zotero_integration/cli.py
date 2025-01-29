@@ -1,4 +1,5 @@
 import click
+import httpx
 import re
 import os
 from pathlib import Path
@@ -180,7 +181,11 @@ def today():
     """Create markdown files for items added today"""
     zot = zotero.Zotero(library_id=0, library_type="user", api_key="", local=True)
     zot.add_parameters(limit=50, sort="dateAdded", direction="desc")
-    items = zot.items()
+    try:
+        items = zot.items()
+    except httpx.ConnectError:
+        print("Error: Could not connect to Zotero. Please make sure Zotero is running.")
+        return
 
     # Ensure the Literature_Notes directory exists
     notes_dir = Path.home() / "Documents" / "Silverbullet" / "Literature_Note"
@@ -215,7 +220,11 @@ def search():
     """Search through Zotero items using fzf"""
     zot = zotero.Zotero(library_id=0, library_type="user", api_key="", local=True)
     zot.add_parameters(limit=0, sort="dateAdded", direction="desc")
-    items = zot.items()
+    try:
+        items = zot.items()
+    except httpx.ConnectError:
+        print("Error: Could not connect to Zotero. Please make sure Zotero is running.")
+        return
 
     # Filter out attachments and prepare titles for fzf
     titles = []
