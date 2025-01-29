@@ -95,15 +95,28 @@ class ZoteroItem:
 
 
 def sanitize_filename(title):
-    """Convert title to valid filename"""
+    """Convert title to valid filename following strict naming rules"""
+    if not title:
+        raise ValueError("Page name cannot be empty")
+    
     # Replace colons with space-dash
     filename = title.replace(":", " -")
-    # Remove other problematic characters
-    filename = re.sub(r'[<>"/\\|?*]', "", filename)
+    # Remove problematic characters
+    filename = re.sub(r'[@$!<>"/\\|?*]', "", filename)
     # Remove multiple dashes
     filename = re.sub(r"-+", "-", filename)
     # Remove leading/trailing dashes and spaces
     filename = filename.strip("- ")
+    
+    # Remove . or ^ from start of filename instead of raising error
+    while filename.startswith(".") or filename.startswith("^"):
+        filename = filename[1:]
+    
+    # Check if the name (without .md) ends with any extension-like pattern
+    name_without_md = filename[:-3] if filename.endswith(".md") else filename
+    if re.search(r'\.[a-zA-Z0-9]+$', name_without_md):
+        print(f"Warning: '{name_without_md}' contains what appears to be a file extension")
+    
     return f"{filename}.md"
 
 
