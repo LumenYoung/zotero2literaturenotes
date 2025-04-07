@@ -232,7 +232,11 @@ def today():
 def search():
     """Search through Zotero items using fzf"""
     zot = zotero.Zotero(library_id=0, library_type="user", api_key="", local=True)
-    zot.add_parameters(limit=0, sort="dateAdded", direction="desc")
+    
+    # Get total number of items and use that as the limit
+    total_items = zot.count_items()
+    zot.add_parameters(limit=total_items, sort="dateAdded", direction="desc")
+
     try:
         items = zot.items()
     except httpx.ConnectError:
