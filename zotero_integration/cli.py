@@ -74,6 +74,8 @@ class ZoteroItem:
     def _sanitize_frontmatter_value(self, value):
         """Sanitize string values for frontmatter by handling quotes properly"""
         if isinstance(value, str):
+            # Remove backslashes first
+            value = value.replace('\\', '')
             if '"' in value:
                 # If value contains double quotes, use single quotes
                 return f"'{value}'"
