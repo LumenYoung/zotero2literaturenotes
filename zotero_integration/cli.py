@@ -59,6 +59,9 @@ class ZoteroItem:
             # Use short title as alias if no citation key exists
             frontmatter["aliases"] = [self.get_short_title()]
 
+        # Add current date
+        frontmatter["date"] = datetime.now().strftime("%Y-%m-%d")
+
         # Add mapped fields
         for source_path, target_key in FRONTMATTER_MAPPING.items():
             if value := get_nested_value(self.raw_item, source_path):
@@ -75,7 +78,7 @@ class ZoteroItem:
         """Sanitize string values for frontmatter by handling quotes properly"""
         if isinstance(value, str):
             # Remove backslashes first
-            value = value.replace('\\', '')
+            value = value.replace("\\", "")
             if '"' in value:
                 # If value contains double quotes, use single quotes
                 return f"'{value}'"
@@ -100,7 +103,7 @@ def sanitize_filename(title):
     """Convert title to valid filename following strict naming rules"""
     if not title:
         raise ValueError("Page name cannot be empty")
-    
+
     # Replace colons with space-dash
     filename = title.replace(":", " -")
     # Remove problematic characters
@@ -109,16 +112,18 @@ def sanitize_filename(title):
     filename = re.sub(r"-+", "-", filename)
     # Remove leading/trailing dashes and spaces
     filename = filename.strip("- ")
-    
+
     # Remove . or ^ from start of filename instead of raising error
     while filename.startswith(".") or filename.startswith("^"):
         filename = filename[1:]
-    
+
     # Check if the name (without .md) ends with any extension-like pattern
     name_without_md = filename[:-3] if filename.endswith(".md") else filename
-    if re.search(r'\.[a-zA-Z0-9]+$', name_without_md):
-        print(f"Warning: '{name_without_md}' contains what appears to be a file extension")
-    
+    if re.search(r"\.[a-zA-Z0-9]+$", name_without_md):
+        print(
+            f"Warning: '{name_without_md}' contains what appears to be a file extension"
+        )
+
     return f"{filename}.md"
 
 
@@ -234,7 +239,7 @@ def today():
 def search():
     """Search through Zotero items using fzf"""
     zot = zotero.Zotero(library_id=0, library_type="user", api_key="", local=True)
-    
+
     # Get total number of items and use that as the limit
     total_items = zot.count_items()
     zot.add_parameters(limit=total_items, sort="dateAdded", direction="desc")
